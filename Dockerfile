@@ -17,7 +17,9 @@ RUN apt update -y && apt install --no-install-recommends -y \
     curl \
     wget \
     git \
-    tzdata
+    tzdata \
+    gnupg \
+    software-properties-common
 
 RUN apt update -y && apt install -y \
     dbus-x11 \
@@ -25,16 +27,14 @@ RUN apt update -y && apt install -y \
     x11-xserver-utils \
     x11-apps
 
-RUN apt install -y software-properties-common
-
-# Instalação do Thorium Browser (versão otimizada do Chromium)
-RUN wget -qO - https://dl.thorium.rocks/debian/pubkey.gpg | gpg --dearmor | tee /usr/share/keyrings/thorium.gpg > /dev/null \
-    && echo "deb [signed-by=/usr/share/keyrings/thorium.gpg] https://dl.thorium.rocks/debian/ stable main" | tee /etc/apt/sources.list.d/thorium.list \
+# Instalação do Thorium Browser (método alternativo)
+RUN wget -qO- https://dl.thorium.rocks/debian/pubkey.gpg | apt-key add - \
+    && echo "deb https://dl.thorium.rocks/debian/ stable main" | tee /etc/apt/sources.list.d/thorium.list \
     && apt update -y \
     && apt install -y thorium-browser \
     && apt clean
 
-# Instalação do Openbox (gerenciador de janelas leve, substituindo XFCE)
+# Instalação do Openbox (gerenciador de janelas leve)
 RUN apt update -y && apt install --no-install-recommends -y \
     openbox \
     obconf \
@@ -53,13 +53,6 @@ RUN mkdir -p /root/.config/openbox \
     && echo '    </application>' >> /root/.config/openbox/rc.xml \
     && echo '  </applications>' >> /root/.config/openbox/rc.xml \
     && echo '</openbox_config>' >> /root/.config/openbox/rc.xml
-
-# Script de inicialização do Openbox com Thorium
-RUN echo '#!/bin/bash' > /root/.xinitrc \
-    && echo 'openbox-session &' >> /root/.xinitrc \
-    && echo 'thorium-browser --no-sandbox --disable-dev-shm-usage &' >> /root/.xinitrc \
-    && echo 'wait' >> /root/.xinitrc \
-    && chmod +x /root/.xinitrc
 
 # Configuração do VNC para iniciar com Openbox
 RUN mkdir -p /root/.vnc \
