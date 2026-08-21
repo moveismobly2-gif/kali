@@ -1,15 +1,77 @@
 FROM kalilinux/kali-rolling:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update -y && apt install --no-install-recommends -y tigervnc-standalone-server novnc websockify sudo xterm init systemd snapd vim net-tools curl wget git tzdata
-RUN apt update -y && apt install -y dbus-x11 x11-utils x11-xserver-utils x11-apps
-RUN apt install software-properties-common -y
 
-# Kali já tem Firefox nos repositórios oficiais - sem PPA!
-RUN apt update -y && apt install -y firefox-esr
+# Instalação base
+RUN apt update -y && apt install --no-install-recommends -y \
+    tigervnc-standalone-server \
+    novnc \
+    websockify \
+    sudo \
+    xterm \
+    init \
+    systemd \
+    snapd \
+    vim \
+    net-tools \
+    curl \
+    wget \
+    git \
+    tzdata
 
-RUN apt update -y && apt install -y xubuntu-icon-theme
+RUN apt update -y && apt install -y \
+    dbus-x11 \
+    x11-utils \
+    x11-xserver-utils \
+    x11-apps
+
+RUN apt install -y software-properties-common
+
+# Instalação do Thorium Browser (versão otimizada do Chromium)
+RUN wget -qO - https://dl.thorium.rocks/debian/pubkey.gpg | gpg --dearmor | tee /usr/share/keyrings/thorium.gpg > /dev/null \
+    && echo "deb [signed-by=/usr/share/keyrings/thorium.gpg] https://dl.thorium.rocks/debian/ stable main" | tee /etc/apt/sources.list.d/thorium.list \
+    && apt update -y \
+    && apt install -y thorium-browser \
+    && apt clean
+
+# Instalação do Openbox (gerenciador de janelas leve, substituindo XFCE)
+RUN apt update -y && apt install --no-install-recommends -y \
+    openbox \
+    obconf \
+    tint2 \
+    pcmanfm \
+    xinit \
+    && apt clean
+
+# Configuração do Openbox
+RUN mkdir -p /root/.config/openbox \
+    && echo '<?xml version="1.0" encoding="UTF-8"?>' > /root/.config/openbox/rc.xml \
+    && echo '<openbox_config xmlns="http://openbox.org/3.4/rc">' >> /root/.config/openbox/rc.xml \
+    && echo '  <applications>' >> /root/.config/openbox/rc.xml \
+    && echo '    <application class="*">' >> /root/.config/openbox/rc.xml \
+    && echo '      <decor>yes</decor>' >> /root/.config/openbox/rc.xml \
+    && echo '    </application>' >> /root/.config/openbox/rc.xml \
+    && echo '  </applications>' >> /root/.config/openbox/rc.xml \
+    && echo '</openbox_config>' >> /root/.config/openbox/rc.xml
+
+# Script de inicialização do Openbox com Thorium
+RUN echo '#!/bin/bash' > /root/.xinitrc \
+    && echo 'openbox-session &' >> /root/.xinitrc \
+    && echo 'thorium-browser --no-sandbox --disable-dev-shm-usage &' >> /root/.xinitrc \
+    && echo 'wait' >> /root/.xinitrc \
+    && chmod +x /root/.xinitrc
+
+# Configuração do VNC para iniciar com Openbox
+RUN mkdir -p /root/.vnc \
+    && echo '#!/bin/sh' > /root/.vnc/xstartup \
+    && echo 'xrdb $HOME/.Xresources' >> /root/.vnc/xstartup \
+    && echo 'openbox-session &' >> /root/.vnc/xstartup \
+    && echo 'thorium-browser --no-sandbox --disable-dev-shm-usage &' >> /root/.vnc/xstartup \
+    && chmod +x /root/.vnc/xstartup
+
 RUN touch /root/.Xauthority
+
 EXPOSE 5901
 EXPOSE 6080
-CMD ["bash", "-c", "vncserver -localhost no -SecurityTypes None -geometry 1024x768 --I-KNOW-THIS-IS-INSECURE && openssl req -new -subj '/C=JP' -x509 -days 365 -nodes -out self.pem -keyout self.pem && websockify -D --web=/usr/share/novnc/ --cert=self.pem 6080 localhost:5901 && tail -f /dev/null"]
+
+CMD ["bash", "-c", "vncserver -localhost no -SecurityTypes None -geometry 1920x1080 --I-KNOW-THIS-IS-INSECURE && openssl req -new -subj '/C=JP' -x509 -days 365 -nodes -out self.pem -keyout self.pem && websockify -D --web=/usr/share/novnc/ --cert=self.pem 6080 localhost:5901 && tail -f /dev/null"]
