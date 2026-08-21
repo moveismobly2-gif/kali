@@ -19,7 +19,8 @@ RUN apt update -y && apt install --no-install-recommends -y \
     git \
     tzdata \
     gnupg \
-    software-properties-common
+    software-properties-common \
+    ca-certificates
 
 RUN apt update -y && apt install -y \
     dbus-x11 \
@@ -27,15 +28,14 @@ RUN apt update -y && apt install -y \
     x11-xserver-utils \
     x11-apps
 
-# Instalação do Thorium Browser (método manual com gpg)
-RUN mkdir -p /etc/apt/keyrings \
-    && wget -qO- https://dl.thorium.rocks/debian/pubkey.gpg | gpg --dearmor | tee /etc/apt/keyrings/thorium.gpg > /dev/null \
-    && echo "deb [signed-by=/etc/apt/keyrings/thorium.gpg] https://dl.thorium.rocks/debian/ stable main" | tee /etc/apt/sources.list.d/thorium.list \
+# Instalação do Thorium Browser (método mais confiável)
+RUN wget -qO- https://dl.thorium.rocks/debian/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/thorium.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/thorium.gpg] https://dl.thorium.rocks/debian/ stable main" | tee /etc/apt/sources.list.d/thorium.list \
     && apt update -y \
     && apt install -y thorium-browser \
     && apt clean
 
-# Instalação do Openbox (gerenciador de janelas leve)
+# Instalação do Openbox
 RUN apt update -y && apt install --no-install-recommends -y \
     openbox \
     obconf \
@@ -55,7 +55,7 @@ RUN mkdir -p /root/.config/openbox \
     && echo '  </applications>' >> /root/.config/openbox/rc.xml \
     && echo '</openbox_config>' >> /root/.config/openbox/rc.xml
 
-# Configuração do VNC para iniciar com Openbox
+# Configuração do VNC
 RUN mkdir -p /root/.vnc \
     && echo '#!/bin/sh' > /root/.vnc/xstartup \
     && echo 'xrdb $HOME/.Xresources' >> /root/.vnc/xstartup \
