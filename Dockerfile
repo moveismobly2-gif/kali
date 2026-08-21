@@ -20,7 +20,8 @@ RUN apt update -y && apt install --no-install-recommends -y \
     tzdata \
     gnupg \
     software-properties-common \
-    ca-certificates
+    ca-certificates \
+    firefox-esr
 
 RUN apt update -y && apt install -y \
     dbus-x11 \
@@ -28,14 +29,12 @@ RUN apt update -y && apt install -y \
     x11-xserver-utils \
     x11-apps
 
-# Instalação do Thorium Browser (método mais confiável)
-RUN wget -qO- https://dl.thorium.rocks/debian/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/thorium.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/thorium.gpg] https://dl.thorium.rocks/debian/ stable main" | tee /etc/apt/sources.list.d/thorium.list \
-    && apt update -y \
-    && apt install -y thorium-browser \
-    && apt clean
+# Instalação do Tor Browser (versão mais recente)
+RUN wget -qO- https://www.torproject.org/dist/torbrowser/14.0.9/tor-browser-linux-x86_64-14.0.9.tar.xz | tar -xJ -C /opt \
+    && ln -s /opt/tor-browser/Browser/start-tor-browser /usr/local/bin/tor-browser \
+    && chmod +x /usr/local/bin/tor-browser
 
-# Instalação do Openbox
+# Instalação do Openbox (gerenciador de janelas leve)
 RUN apt update -y && apt install --no-install-recommends -y \
     openbox \
     obconf \
@@ -55,12 +54,12 @@ RUN mkdir -p /root/.config/openbox \
     && echo '  </applications>' >> /root/.config/openbox/rc.xml \
     && echo '</openbox_config>' >> /root/.config/openbox/rc.xml
 
-# Configuração do VNC
+# Configuração do VNC para iniciar com Openbox e Tor Browser
 RUN mkdir -p /root/.vnc \
     && echo '#!/bin/sh' > /root/.vnc/xstartup \
     && echo 'xrdb $HOME/.Xresources' >> /root/.vnc/xstartup \
     && echo 'openbox-session &' >> /root/.vnc/xstartup \
-    && echo 'thorium-browser --no-sandbox --disable-dev-shm-usage &' >> /root/.vnc/xstartup \
+    && echo 'tor-browser --no-sandbox &' >> /root/.vnc/xstartup \
     && chmod +x /root/.vnc/xstartup
 
 RUN touch /root/.Xauthority
