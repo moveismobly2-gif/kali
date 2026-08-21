@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:1
 
 # ============================================================
-# Pacotes base
+# PACOTES
 # ============================================================
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
@@ -33,12 +33,22 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     pcmanfm \
     xinit \
     firefox-esr \
+    procps \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 
 # ============================================================
-# Instalação do Tor Browser
+# USUÁRIO KALI
+# ============================================================
+
+RUN useradd -m -s /bin/bash kali \
+    && echo "kali ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/kali \
+    && chmod 0440 /etc/sudoers.d/kali
+
+
+# ============================================================
+# TOR BROWSER
 # ============================================================
 
 RUN cd /tmp \
@@ -48,64 +58,95 @@ RUN cd /tmp \
     && tar -xJf tor-browser.tar.xz -C /opt \
     && rm -f tor-browser.tar.xz \
     && test -f /opt/tor-browser/Browser/start-tor-browser \
-    && ln -sf /opt/tor-browser/Browser/start-tor-browser /usr/local/bin/tor-browser \
-    && chmod +x /opt/tor-browser/Browser/start-tor-browser
+    && chmod +x /opt/tor-browser/Browser/start-tor-browser \
+    && chown -R kali:kali /opt/tor-browser
 
 
 # ============================================================
-# Configuração do Openbox
+# OPENBOX
 # ============================================================
 
-RUN mkdir -p /root/.config/openbox \
-    && cat > /root/.config/openbox/rc.xml <<'EOF'
+RUN mkdir -p /home/kali/.config/openbox \
+    && cat > /home/kali/.config/openbox/rc.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 
 <openbox_config xmlns="http://openbox.org/3.4/rc">
 
-  <applications>
-    <application class="*">
-      <decor>yes</decor>
-    </application>
-  </applications>
+    <applications>
+
+        <application class="*">
+            <decor>yes</decor>
+        </application>
+
+    </applications>
 
 </openbox_config>
 EOF
 
 
 # ============================================================
-# Configuração atual do TigerVNC
+# AUTOSTART DO OPENBOX
 # ============================================================
 
-RUN mkdir -p /root/.config/tigervnc \
-    && cat > /root/.config/tigervnc/xstartup <<'EOF'
+RUN cat > /home/kali/.config/openbox/autostart <<'EOF'
 #!/bin/sh
+
+# Variáveis da sessão
+export DISPLAY=:1
+export XDG_CURRENT_DESKTOP=Openbox
+export XDG_SESSION_DESKTOP=Openbox
+
+# Fundo da área de trabalho
+xsetroot -solid "#202020"
+
+# Terminal para confirmar que o desktop está funcionando
+xterm \
+    -geometry 100x30+20+20 \
+    -title "Kali Linux" &
+
+# Aguarda o Openbox carregar
+sleep 3
+
+# Inicia o Tor Browser
+/opt/tor-browser/Browser/start-tor-browser &
+
+EOF
+
+RUN chmod +x /home/kali/.config/openbox/autostart
+
+
+# ============================================================
+# TIGERVNC
+# ============================================================
+
+RUN mkdir -p /home/kali/.config/tigervnc \
+    && cat > /home/kali/.config/tigervnc/xstartup <<'EOF'
+#!/bin/sh
+
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
 
 export DISPLAY=:1
 export XDG_CURRENT_DESKTOP=Openbox
 export XDG_SESSION_DESKTOP=Openbox
 
-xrdb "$HOME/.Xresources" 2>/dev/null || true
+# Recursos X
+if [ -f "$HOME/.Xresources" ]; then
+    xrdb "$HOME/.Xresources"
+fi
 
 # Inicia o Openbox
-openbox-session &
-
-sleep 3
-
-# Inicia o Tor Browser
-tor-browser --no-sandbox &
-
-wait
+exec dbus-launch --exit-with-session openbox-session
 EOF
 
-RUN chmod +x /root/.config/tigervnc/xstartup \
-    && touch /root/.Xauthority
+RUN chmod +x /home/kali/.config/tigervnc/xstartup
 
 
 # ============================================================
-# Configuração do TigerVNC
+# CONFIGURAÇÃO TIGERVNC
 # ============================================================
 
-RUN cat > /root/.config/tigervnc/config <<'EOF'
+RUN cat > /home/kali/.config/tigervnc/config <<'EOF'
 geometry=1920x1080
 depth=24
 localhost=no
@@ -114,7 +155,18 @@ EOF
 
 
 # ============================================================
-# Script de inicialização
+# PERMISSÕES
+# ============================================================
+
+RUN chown -R kali:kali /home/kali \
+    && mkdir -p /home/kali/.vnc \
+    && rm -rf /home/kali/.vnc \
+    && touch /home/kali/.Xauthority \
+    && chown kali:kali /home/kali/.Xauthority
+
+
+# ============================================================
+# SCRIPT DE INICIALIZAÇÃO
 # ============================================================
 
 RUN cat > /usr/local/bin/start-desktop.sh <<'EOF'
@@ -125,37 +177,78 @@ set -e
 export DISPLAY=:1
 
 echo "=========================================="
-echo " Iniciando ambiente gráfico"
+echo " INICIANDO KALI LINUX"
 echo "=========================================="
 
-# Diretório atual do TigerVNC
-mkdir -p /root/.config/tigervnc
+echo "Usuário: kali"
+echo "Display: $DISPLAY"
 
-# Remove configuração antiga, caso exista
-rm -rf /root/.vnc
+# ------------------------------------------------------------
+# Limpeza
+# ------------------------------------------------------------
 
-# Remove locks de uma sessão anterior
-vncserver -kill :1 >/dev/null 2>&1 || true
+echo "Limpando sessões anteriores..."
+
+runuser -u kali -- \
+    env HOME=/home/kali \
+    USER=kali \
+    LOGNAME=kali \
+    vncserver -kill :1 >/dev/null 2>&1 || true
 
 rm -f /tmp/.X1-lock
 rm -f /tmp/.X11-unix/X1
 
-echo "Iniciando TigerVNC..."
+rm -rf /home/kali/.vnc
 
-vncserver :1 \
-    -geometry 1920x1080 \
-    -depth 24 \
-    -localhost no \
-    -SecurityTypes None \
-    --I-KNOW-THIS-IS-INSECURE
+mkdir -p /home/kali/.config/tigervnc
+
+chown -R kali:kali /home/kali/.config
+
+
+# ------------------------------------------------------------
+# TigerVNC
+# ------------------------------------------------------------
 
 echo "=========================================="
-echo " VNC iniciado na porta 5901"
+echo " INICIANDO TIGERVNC"
 echo "=========================================="
 
-# ============================================================
-# Certificado SSL para noVNC
-# ============================================================
+runuser -u kali -- \
+    env HOME=/home/kali \
+    USER=kali \
+    LOGNAME=kali \
+    DISPLAY=:1 \
+    vncserver :1 \
+        -geometry 1920x1080 \
+        -depth 24 \
+        -localhost no \
+        -SecurityTypes None \
+        --I-KNOW-THIS-IS-INSECURE
+
+echo ""
+echo "TigerVNC iniciado!"
+echo "Porta: 5901"
+echo ""
+
+
+# ------------------------------------------------------------
+# Verificação
+# ------------------------------------------------------------
+
+sleep 3
+
+echo "=========================================="
+echo " PROCESSOS GRÁFICOS"
+echo "=========================================="
+
+ps aux | grep -E "Xtigervnc|openbox|xterm" | grep -v grep || true
+
+echo ""
+
+
+# ------------------------------------------------------------
+# Certificado noVNC
+# ------------------------------------------------------------
 
 mkdir -p /etc/novnc
 
@@ -175,11 +268,13 @@ if [ ! -f /etc/novnc/self.pem ]; then
 fi
 
 
-# ============================================================
-# Inicia noVNC
-# ============================================================
+# ------------------------------------------------------------
+# noVNC
+# ------------------------------------------------------------
 
-echo "Iniciando noVNC..."
+echo "=========================================="
+echo " INICIANDO NOVNC"
+echo "=========================================="
 
 websockify \
     --web=/usr/share/novnc/ \
@@ -189,16 +284,33 @@ websockify \
 
 NOVNC_PID=$!
 
+
+# ------------------------------------------------------------
+# Status
+# ------------------------------------------------------------
+
+sleep 2
+
+echo ""
 echo "=========================================="
-echo " Ambiente iniciado!"
+echo " KALI ONLINE"
+echo "=========================================="
 echo ""
-echo " VNC:   5901"
-echo " noVNC: 6080"
+echo "VNC:    5901"
+echo "noVNC:  6080"
+echo "PID:    $NOVNC_PID"
 echo ""
-echo " PID noVNC: $NOVNC_PID"
+echo "Desktop: Openbox"
+echo "Terminal: xterm"
+echo "Browser: Tor Browser"
+echo ""
 echo "=========================================="
 
-# Mantém o processo principal ativo
+
+# ------------------------------------------------------------
+# Mantém container ativo
+# ------------------------------------------------------------
+
 wait $NOVNC_PID
 EOF
 
@@ -206,7 +318,7 @@ RUN chmod +x /usr/local/bin/start-desktop.sh
 
 
 # ============================================================
-# Portas
+# PORTAS
 # ============================================================
 
 EXPOSE 5901
@@ -214,7 +326,7 @@ EXPOSE 6080
 
 
 # ============================================================
-# Inicialização
+# START
 # ============================================================
 
 CMD ["/usr/local/bin/start-desktop.sh"]
