@@ -2,25 +2,26 @@ FROM kalilinux/kali-rolling:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:1
-ENV HOME=/home/kali
 ENV USER=kali
-ENV LOGNAME=kali
+ENV HOME=/home/kali
 
 # ============================================================
-# KALI ROLLING + XFCE + VNC + NOVNC
+# KALI LINUX + XFCE + VNC + NOVNC
 # ============================================================
 
 RUN apt-get update \
-    && apt-get full-upgrade -y \
-    && apt-get install --no-install-recommends -y \
+    && apt-get install -y --no-install-recommends \
         kali-desktop-xfce \
+        kali-defaults-desktop \
         tigervnc-standalone-server \
         novnc \
         websockify \
         dbus-x11 \
+        dbus-user-session \
         x11-xserver-utils \
         x11-utils \
         xterm \
+        xfce4-terminal \
         sudo \
         curl \
         wget \
@@ -29,8 +30,11 @@ RUN apt-get update \
         nano \
         net-tools \
         procps \
-        openssl \
+        psmisc \
+        iproute2 \
         ca-certificates \
+        gnupg \
+        openssl \
         xz-utils \
         firefox-esr \
     && apt-get clean \
@@ -41,38 +45,18 @@ RUN apt-get update \
 # USUÁRIO KALI
 # ============================================================
 
-RUN useradd \
-        --create-home \
-        --shell /bin/bash \
-        kali \
-    && echo "kali ALL=(ALL) NOPASSWD:ALL" \
-        > /etc/sudoers.d/kali \
+RUN useradd -m -s /bin/bash kali \
+    && echo "kali ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/kali \
     && chmod 0440 /etc/sudoers.d/kali
 
 
 # ============================================================
-# TOR BROWSER
+# CONFIGURAÇÃO DO XFCE
 # ============================================================
 
-RUN cd /tmp \
-    && wget -q \
-       https://archive.torproject.org/tor-package-archive/torbrowser/14.0.9/tor-browser-linux-x86_64-14.0.9.tar.xz \
-       -O tor-browser.tar.xz \
-    && tar -xJf tor-browser.tar.xz -C /opt \
-    && rm -f tor-browser.tar.xz \
-    && test -x /opt/tor-browser/Browser/start-tor-browser \
-    && chown -R kali:kali /opt/tor-browser
-
-
-# ============================================================
-# DIRETÓRIOS DO KALI
-# ============================================================
-
-RUN mkdir -p \
-        /home/kali/.config/tigervnc \
-        /home/kali/.config/autostart \
-        /etc/novnc \
-    && chown -R kali:kali /home/kali
+RUN mkdir -p /home/kali/.config/xfce4 \
+    && mkdir -p /home/kali/.config/tigervnc \
+    && mkdir -p /home/kali/.config/autostart
 
 
 # ============================================================
@@ -86,19 +70,15 @@ unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
 
 export DISPLAY=:1
-export HOME=/home/kali
-export USER=kali
-export LOGNAME=kali
-
 export XDG_CURRENT_DESKTOP=XFCE
 export XDG_SESSION_DESKTOP=xfce
-export XDG_SESSION_TYPE=x11
+export XDG_CONFIG_DIRS=/etc/xdg/xdg-xfce:/etc/xdg
+export XDG_DATA_DIRS=/usr/share/xfce4:/usr/share:/usr/local/share
 
 if [ -f "$HOME/.Xresources" ]; then
     xrdb "$HOME/.Xresources"
 fi
 
-# Inicia o desktop XFCE completo
 exec dbus-launch --exit-with-session startxfce4
 EOF
 
@@ -118,28 +98,62 @@ EOF
 
 
 # ============================================================
-# TOR NÃO INICIA AUTOMATICAMENTE
-# FIREFOX NÃO INICIA AUTOMATICAMENTE
+# NÃO INICIAR NAVEGADORES AUTOMATICAMENTE
 # ============================================================
 
-RUN rm -f \
-        /home/kali/.config/autostart/*firefox* \
-        /home/kali/.config/autostart/*tor* \
-        /etc/xdg/autostart/*firefox* \
-        /etc/xdg/autostart/*tor* \
-    2>/dev/null || true
+RUN rm -f /home/kali/.config/autostart/*firefox*.desktop \
+          /home/kali/.config/autostart/*tor*.desktop \
+          /etc/xdg/autostart/*firefox*.desktop \
+          /etc/xdg/autostart/*tor*.desktop \
+    || true
+
+
+# ============================================================
+# TOR BROWSER
+# ============================================================
+
+RUN cd /tmp \
+    && wget -q \
+       https://archive.torproject.org/tor-package-archive/torbrowser/14.0.9/tor-browser-linux-x86_64-14.0.9.tar.xz \
+       -O tor-browser.tar.xz \
+    && tar -xJf tor-browser.tar.xz -C /opt \
+    && rm -f tor-browser.tar.xz \
+    && test -f /opt/tor-browser/Browser/start-tor-browser \
+    && chmod +x /opt/tor-browser/Browser/start-tor-browser \
+    && chown -R kali:kali /opt/tor-browser
+
+
+# ============================================================
+# ATALHO DO TOR BROWSER
+# ============================================================
+
+RUN ln -sf /opt/tor-browser/Browser/start-tor-browser \
+    /usr/local/bin/tor-browser
+
+
+# ============================================================
+# DESKTOP DIRECTORY
+# ============================================================
+
+RUN cat > /home/kali/.Xresources <<'EOF'
+XTerm*faceName: Monospace
+XTerm*faceSize: 11
+XTerm*background: black
+XTerm*foreground: white
+EOF
 
 
 # ============================================================
 # PERMISSÕES
 # ============================================================
 
-RUN touch /home/kali/.Xauthority \
-    && chown -R kali:kali /home/kali
+RUN chown -R kali:kali /home/kali \
+    && touch /home/kali/.Xauthority \
+    && chown kali:kali /home/kali/.Xauthority
 
 
 # ============================================================
-# SCRIPT DE INICIALIZAÇÃO
+# SCRIPT PRINCIPAL
 # ============================================================
 
 RUN cat > /usr/local/bin/start-desktop.sh <<'EOF'
@@ -148,30 +162,29 @@ RUN cat > /usr/local/bin/start-desktop.sh <<'EOF'
 set -e
 
 export DISPLAY=:1
+export HOME=/home/kali
 
+echo "=========================================="
+echo "       KALI LINUX 2026 - XFCE"
+echo "=========================================="
 echo ""
-echo "=============================================="
-echo "        KALI LINUX ROLLING + XFCE"
-echo "=============================================="
-echo ""
-echo "Usuário : kali"
-echo "Desktop : XFCE"
-echo "Display : :1"
+echo "Usuário: kali"
+echo "Desktop: XFCE"
+echo "Display: :1"
 echo ""
 
 
 # ============================================================
-# LIMPA SESSÃO ANTERIOR
+# LIMPEZA
 # ============================================================
 
-echo "[1/4] Limpando sessão anterior..."
+echo "[1/5] Limpando sessões antigas..."
 
 runuser -u kali -- \
-    env \
-        HOME=/home/kali \
+    env HOME=/home/kali \
         USER=kali \
         LOGNAME=kali \
-    vncserver -kill :1 \
+        vncserver -kill :1 \
         >/dev/null 2>&1 || true
 
 rm -f /tmp/.X1-lock
@@ -185,52 +198,57 @@ chown -R kali:kali /home/kali
 
 
 # ============================================================
-# INICIA TIGERVNC
+# TIGERVNC
 # ============================================================
 
-echo ""
-echo "[2/4] Iniciando TigerVNC..."
+echo "[2/5] Iniciando TigerVNC..."
 
 runuser -u kali -- \
-    env \
-        HOME=/home/kali \
+    env HOME=/home/kali \
         USER=kali \
         LOGNAME=kali \
         DISPLAY=:1 \
-    vncserver :1 \
-        -geometry 1920x1080 \
-        -depth 24 \
-        -localhost no \
-        -SecurityTypes None \
-        -xstartup /home/kali/.config/tigervnc/xstartup \
-        --I-KNOW-THIS-IS-INSECURE
+        vncserver :1 \
+            -geometry 1920x1080 \
+            -depth 24 \
+            -localhost no \
+            -SecurityTypes None \
+            --I-KNOW-THIS-IS-INSECURE
+
 
 echo ""
-echo "TigerVNC iniciado na porta 5901"
+echo "TigerVNC iniciado."
+echo "Porta: 5901"
+echo ""
 
 
 # ============================================================
-# AGUARDA XFCE
+# AGUARDA DESKTOP
 # ============================================================
+
+echo "[3/5] Aguardando XFCE..."
 
 sleep 5
 
 echo ""
-echo "=============================================="
-echo "        PROCESSOS DO DESKTOP"
-echo "=============================================="
+echo "Processos gráficos:"
+echo "------------------------------------------"
 
 ps aux | grep -E \
     "Xtigervnc|xfce4-session|xfdesktop|xfwm4|xfce4-panel" \
     | grep -v grep || true
 
-
-# ============================================================
-# CERTIFICADO NOVNC
-# ============================================================
-
+echo "------------------------------------------"
 echo ""
-echo "[3/4] Preparando certificado noVNC..."
+
+
+# ============================================================
+# CERTIFICADO
+# ============================================================
+
+echo "[4/5] Preparando certificado SSL..."
+
+mkdir -p /etc/novnc
 
 if [ ! -f /etc/novnc/self.pem ]; then
 
@@ -250,8 +268,7 @@ fi
 # NOVNC
 # ============================================================
 
-echo ""
-echo "[4/4] Iniciando noVNC..."
+echo "[5/5] Iniciando noVNC..."
 
 websockify \
     --web=/usr/share/novnc/ \
@@ -266,33 +283,37 @@ NOVNC_PID=$!
 # STATUS
 # ============================================================
 
-sleep 2
+sleep 3
 
 echo ""
-echo "=============================================="
-echo "           KALI LINUX ONLINE"
-echo "=============================================="
+echo "=========================================="
+echo "          KALI LINUX ONLINE"
+echo "=========================================="
 echo ""
-echo "Desktop  : XFCE"
-echo "Resolucao: 1920x1080"
-echo "Usuario  : kali"
-echo "VNC      : 5901"
-echo "noVNC    : 6080"
+echo "Desktop:       XFCE"
+echo "Resolução:     1920x1080"
+echo "Usuário:       kali"
 echo ""
-echo "Firefox      : instalado"
-echo "Tor Browser  : instalado"
-echo "Auto-start   : DESATIVADO"
+echo "VNC:           5901"
+echo "noVNC:         6080"
 echo ""
-echo "=============================================="
+echo "Firefox:       instalado"
+echo "Tor Browser:   instalado"
+echo ""
+echo "Navegadores:"
+echo "NÃO iniciados automaticamente"
+echo ""
+echo "=========================================="
 echo ""
 
 
 # ============================================================
-# MANTÉM CONTAINER ATIVO
+# MONITORAMENTO
 # ============================================================
 
 wait $NOVNC_PID
 EOF
+
 
 RUN chmod +x /usr/local/bin/start-desktop.sh
 
