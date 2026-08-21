@@ -41,8 +41,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 # Instalação do Tor Browser
 # ============================================================
 
-RUN mkdir -p /opt/tor-browser \
-    && cd /tmp \
+RUN cd /tmp \
     && wget -q \
        https://archive.torproject.org/tor-package-archive/torbrowser/14.0.9/tor-browser-linux-x86_64-14.0.9.tar.xz \
        -O tor-browser.tar.xz \
@@ -64,11 +63,9 @@ RUN mkdir -p /root/.config/openbox \
 <openbox_config xmlns="http://openbox.org/3.4/rc">
 
   <applications>
-
     <application class="*">
       <decor>yes</decor>
     </application>
-
   </applications>
 
 </openbox_config>
@@ -76,11 +73,11 @@ EOF
 
 
 # ============================================================
-# Configuração do VNC
+# Configuração atual do TigerVNC
 # ============================================================
 
-RUN mkdir -p /root/.vnc \
-    && cat > /root/.vnc/xstartup <<'EOF'
+RUN mkdir -p /root/.config/tigervnc \
+    && cat > /root/.config/tigervnc/xstartup <<'EOF'
 #!/bin/sh
 
 export DISPLAY=:1
@@ -89,17 +86,31 @@ export XDG_SESSION_DESKTOP=Openbox
 
 xrdb "$HOME/.Xresources" 2>/dev/null || true
 
-dbus-launch --exit-with-session openbox-session &
+# Inicia o Openbox
+openbox-session &
 
-sleep 2
+sleep 3
 
+# Inicia o Tor Browser
 tor-browser --no-sandbox &
 
 wait
 EOF
 
-RUN chmod +x /root/.vnc/xstartup \
+RUN chmod +x /root/.config/tigervnc/xstartup \
     && touch /root/.Xauthority
+
+
+# ============================================================
+# Configuração do TigerVNC
+# ============================================================
+
+RUN cat > /root/.config/tigervnc/config <<'EOF'
+geometry=1920x1080
+depth=24
+localhost=no
+SecurityTypes=None
+EOF
 
 
 # ============================================================
@@ -117,13 +128,20 @@ echo "=========================================="
 echo " Iniciando ambiente gráfico"
 echo "=========================================="
 
-# Remove sessões antigas caso existam
+# Diretório atual do TigerVNC
+mkdir -p /root/.config/tigervnc
+
+# Remove configuração antiga, caso exista
+rm -rf /root/.vnc
+
+# Remove locks de uma sessão anterior
 vncserver -kill :1 >/dev/null 2>&1 || true
 
 rm -f /tmp/.X1-lock
 rm -f /tmp/.X11-unix/X1
 
-# Inicia o servidor VNC
+echo "Iniciando TigerVNC..."
+
 vncserver :1 \
     -geometry 1920x1080 \
     -depth 24 \
@@ -131,12 +149,20 @@ vncserver :1 \
     -SecurityTypes None \
     --I-KNOW-THIS-IS-INSECURE
 
-echo "VNC iniciado na porta 5901"
+echo "=========================================="
+echo " VNC iniciado na porta 5901"
+echo "=========================================="
 
-# Gera certificado SSL para o noVNC
+# ============================================================
+# Certificado SSL para noVNC
+# ============================================================
+
 mkdir -p /etc/novnc
 
 if [ ! -f /etc/novnc/self.pem ]; then
+
+    echo "Gerando certificado SSL..."
+
     openssl req \
         -new \
         -x509 \
@@ -145,7 +171,13 @@ if [ ! -f /etc/novnc/self.pem ]; then
         -subj "/C=BR/ST=DF/L=Brasilia/O=Kali/CN=localhost" \
         -out /etc/novnc/self.pem \
         -keyout /etc/novnc/self.pem
+
 fi
+
+
+# ============================================================
+# Inicia noVNC
+# ============================================================
 
 echo "Iniciando noVNC..."
 
@@ -155,15 +187,19 @@ websockify \
     6080 \
     localhost:5901 &
 
+NOVNC_PID=$!
+
 echo "=========================================="
 echo " Ambiente iniciado!"
 echo ""
-echo " VNC:   :5901"
-echo " noVNC: :6080"
+echo " VNC:   5901"
+echo " noVNC: 6080"
+echo ""
+echo " PID noVNC: $NOVNC_PID"
 echo "=========================================="
 
-# Mantém o container rodando
-wait
+# Mantém o processo principal ativo
+wait $NOVNC_PID
 EOF
 
 RUN chmod +x /usr/local/bin/start-desktop.sh
