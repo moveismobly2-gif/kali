@@ -27,9 +27,10 @@ RUN apt update -y && apt install -y \
     x11-xserver-utils \
     x11-apps
 
-# Instalação do Thorium Browser (método alternativo)
-RUN wget -qO- https://dl.thorium.rocks/debian/pubkey.gpg | apt-key add - \
-    && echo "deb https://dl.thorium.rocks/debian/ stable main" | tee /etc/apt/sources.list.d/thorium.list \
+# Instalação do Thorium Browser (método manual com gpg)
+RUN mkdir -p /etc/apt/keyrings \
+    && wget -qO- https://dl.thorium.rocks/debian/pubkey.gpg | gpg --dearmor | tee /etc/apt/keyrings/thorium.gpg > /dev/null \
+    && echo "deb [signed-by=/etc/apt/keyrings/thorium.gpg] https://dl.thorium.rocks/debian/ stable main" | tee /etc/apt/sources.list.d/thorium.list \
     && apt update -y \
     && apt install -y thorium-browser \
     && apt clean
